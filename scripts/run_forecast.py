@@ -111,6 +111,7 @@ def run():
                 "score": combined["final_score"],
                 "price_range": daily_data.get("price_range", {}),
                 "reasoning": daily_data.get("reasoning", ""),
+                "reasoning_kr": daily_data.get("reasoning_kr", ""),
             },
             "weekly": {
                 "direction": weekly_data.get("direction", "FLAT"),
@@ -118,6 +119,7 @@ def run():
                 "score": round(weekly_data.get("confidence", 0.5), 4),
                 "price_range": weekly_data.get("price_range", {}),
                 "reasoning": weekly_data.get("reasoning", ""),
+                "reasoning_kr": weekly_data.get("reasoning_kr", ""),
             },
             "monthly": {
                 "direction": monthly_data.get("direction", "FLAT"),
@@ -125,11 +127,15 @@ def run():
                 "score": round(monthly_data.get("confidence", 0.5), 4),
                 "price_range": monthly_data.get("price_range", {}),
                 "reasoning": monthly_data.get("reasoning", ""),
+                "reasoning_kr": monthly_data.get("reasoning_kr", ""),
             },
             "tech_summary": ", ".join(tech_summary_parts) if tech_summary_parts else "N/A",
             "news_summary": llm_analysis.get("news_summary", ""),
+            "news_summary_kr": llm_analysis.get("news_summary_kr", ""),
             "key_catalysts": llm_analysis.get("key_catalysts", []),
+            "key_catalysts_kr": llm_analysis.get("key_catalysts_kr", []),
             "key_risks": llm_analysis.get("key_risks", []),
+            "key_risks_kr": llm_analysis.get("key_risks_kr", []),
         })
 
     # 5. Generate reports

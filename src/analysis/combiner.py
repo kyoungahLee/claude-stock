@@ -41,11 +41,14 @@ def combine_signals(technical_signals: dict, llm_result: dict) -> dict:
         "weights": {"ml": ml_weight, "llm": llm_weight},
         "llm_analysis": {
             "news_summary": llm_result.get("news_summary", ""),
+            "news_summary_kr": llm_result.get("news_summary_kr", ""),
             "daily": llm_result.get("daily", {}),
             "weekly": llm_result.get("weekly", {}),
             "monthly": llm_result.get("monthly", {}),
             "key_catalysts": llm_result.get("key_catalysts", []),
+            "key_catalysts_kr": llm_result.get("key_catalysts_kr", []),
             "key_risks": llm_result.get("key_risks", []),
+            "key_risks_kr": llm_result.get("key_risks_kr", []),
         },
     }
 
