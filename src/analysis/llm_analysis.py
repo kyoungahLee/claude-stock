@@ -34,27 +34,46 @@ def analyze_with_llm(
     technical_signals: dict,
     news_text: str,
     recent_prices: list[dict],
+    current_price: float,
 ) -> dict:
     settings = get_settings()
     client = _get_client()
     if client is None:
         return {"error": "LLM not configured. Set ANTHROPIC_API_KEY or LLM_PROVIDER=bedrock"}
 
-    system_prompt = """You are a professional stock market analyst. You analyze technical indicators and news to provide stock forecasts.
+    system_prompt = """You are a professional stock market analyst. You analyze technical indicators and news to provide stock forecasts across multiple timeframes.
 
 Your output must be valid JSON with this structure:
 {
     "news_summary": "Brief summary of relevant news (2-3 sentences)",
-    "sentiment_score": <float from -1.0 (very bearish) to 1.0 (very bullish)>,
-    "direction": "UP" | "DOWN" | "FLAT",
-    "confidence": <float from 0.0 to 1.0>,
-    "magnitude_range": {"low": <float %>, "high": <float %>},
+    "daily": {
+        "direction": "UP" | "DOWN" | "FLAT",
+        "confidence": <float from 0.0 to 1.0>,
+        "price_range": {"low": <float absolute price>, "high": <float absolute price>},
+        "reasoning": "Brief explanation for next-day forecast"
+    },
+    "weekly": {
+        "direction": "UP" | "DOWN" | "FLAT",
+        "confidence": <float from 0.0 to 1.0>,
+        "price_range": {"low": <float absolute price>, "high": <float absolute price>},
+        "reasoning": "Brief explanation for 1-week forecast"
+    },
+    "monthly": {
+        "direction": "UP" | "DOWN" | "FLAT",
+        "confidence": <float from 0.0 to 1.0>,
+        "price_range": {"low": <float absolute price>, "high": <float absolute price>},
+        "reasoning": "Brief explanation for 1-month forecast"
+    },
     "key_catalysts": ["catalyst1", "catalyst2"],
-    "key_risks": ["risk1", "risk2"],
-    "reasoning": "Brief explanation of your analysis"
+    "key_risks": ["risk1", "risk2"]
 }
 
-Be objective and data-driven. If information is insufficient, lower your confidence score."""
+Guidelines:
+- price_range values must be absolute dollar prices (not percentages).
+- Use the provided current price as the baseline for your price range estimates.
+- Wider timeframes should generally have wider price ranges to reflect greater uncertainty.
+- Be objective and data-driven. If information is insufficient, lower your confidence score.
+- Confidence for longer timeframes should generally be lower than shorter ones."""
 
     price_text = ""
     if recent_prices:
@@ -64,9 +83,10 @@ Be objective and data-driven. If information is insufficient, lower your confide
 
     signals_text = json.dumps(technical_signals, indent=2) if technical_signals else "No technical data available"
 
-    user_prompt = f"""Analyze the following stock and provide your forecast for the next trading day.
+    user_prompt = f"""Analyze the following stock and provide forecasts for three timeframes: next trading day (daily), 1 week (weekly), and 1 month (monthly).
 
 **Stock**: {ticker} ({ticker_name})
+**Current Price**: ${current_price:.2f}
 
 **Technical Indicators**:
 {signals_text}
@@ -81,7 +101,7 @@ Provide your analysis as JSON."""
     try:
         response = client.messages.create(
             model=_get_model_id(settings),
-            max_tokens=1024,
+            max_tokens=2048,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )

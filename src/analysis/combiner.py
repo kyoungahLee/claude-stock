@@ -9,10 +9,13 @@ def combine_signals(technical_signals: dict, llm_result: dict) -> dict:
     # Technical score: derive from signals
     tech_score = _compute_technical_score(technical_signals)
 
-    # LLM score
-    llm_score = llm_result.get("sentiment_score", 0.0)
-    llm_direction = llm_result.get("direction", "FLAT")
-    llm_confidence = llm_result.get("confidence", 0.5)
+    # LLM score: derive from daily forecast (primary timeframe for combined signal)
+    daily = llm_result.get("daily", {})
+    llm_direction = daily.get("direction", "FLAT")
+    llm_confidence = daily.get("confidence", 0.5)
+    # Convert direction to a sentiment score for weighted combination
+    direction_scores = {"UP": 0.5, "DOWN": -0.5, "FLAT": 0.0}
+    llm_score = direction_scores.get(llm_direction, 0.0) * llm_confidence
 
     # Weighted combination
     final_score = (ml_weight * tech_score) + (llm_weight * llm_score)
@@ -38,10 +41,11 @@ def combine_signals(technical_signals: dict, llm_result: dict) -> dict:
         "weights": {"ml": ml_weight, "llm": llm_weight},
         "llm_analysis": {
             "news_summary": llm_result.get("news_summary", ""),
+            "daily": llm_result.get("daily", {}),
+            "weekly": llm_result.get("weekly", {}),
+            "monthly": llm_result.get("monthly", {}),
             "key_catalysts": llm_result.get("key_catalysts", []),
             "key_risks": llm_result.get("key_risks", []),
-            "magnitude_range": llm_result.get("magnitude_range", {}),
-            "reasoning": llm_result.get("reasoning", ""),
         },
     }
 

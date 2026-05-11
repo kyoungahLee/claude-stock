@@ -1,10 +1,13 @@
 from datetime import date, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import ForecastListResponse, ForecastResponse
+from src.config import ROOT_DIR
 from src.db.database import get_session
 from src.db.models import Prediction
 
@@ -51,3 +54,13 @@ async def get_ticker_history(ticker: str, session: AsyncSession = Depends(get_se
         forecasts=[ForecastResponse.model_validate(p) for p in predictions],
         count=len(predictions),
     )
+
+
+@router.get("/report/{ticker}", response_class=PlainTextResponse)
+async def get_ticker_report(ticker: str):
+    today = date.today().strftime("%Y-%m-%d")
+    safe_symbol = ticker.replace(".", "_")
+    report_path = ROOT_DIR / "reports" / "stocks" / f"{today}_{safe_symbol}.md"
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail=f"No report for {ticker} today")
+    return report_path.read_text(encoding="utf-8")

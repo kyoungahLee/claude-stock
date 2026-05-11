@@ -1,15 +1,10 @@
 import { getBacktestScores } from "@/lib/api";
 import HistoryClient from "./HistoryClient";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function HistoryPage() {
-  let scores: any = null;
-  let error: string | null = null;
-
-  try {
-    scores = await getBacktestScores();
-  } catch (e) {
-    error = "Failed to load backtest scores. Is the backend running?";
-  }
-
-  return <HistoryClient scores={scores} error={error} />;
+  const scores = await getBacktestScores();
+  return <HistoryClient scores={scores} error={null} />;
 }

@@ -1,3 +1,20 @@
+{# Macro for direction emoji #}
+{%- macro dir_emoji(direction) -%}
+{%- if direction == 'UP' -%}🟢 UP{%- elif direction == 'DOWN' -%}🔴 DOWN{%- else -%}⚪ FLAT{%- endif -%}
+{%- endmacro -%}
+
+{%- macro dir_emoji_kr(direction) -%}
+{%- if direction == 'UP' -%}🟢 상승{%- elif direction == 'DOWN' -%}🔴 하락{%- else -%}⚪ 보합{%- endif -%}
+{%- endmacro -%}
+
+{%- macro currency(market) -%}
+{%- if market == 'us' -%}${%- else -%}₩{%- endif -%}
+{%- endmacro -%}
+
+{# ============================================================ #}
+{# ENGLISH REPORT                                                #}
+{# ============================================================ #}
+
 # Daily Stock Forecast Report
 
 **Date**: {{ date }}
@@ -14,41 +31,177 @@
 
 ---
 
-## Forecasts
+## Korea Market
 
-{% for forecast in forecasts %}
+{% for forecast in forecasts if forecast.market == 'korea' %}
 ### {{ forecast.symbol }} ({{ forecast.name }})
 
-| Metric | Value |
-|--------|-------|
-| Last Close | {{ forecast.last_close }} |
-| Change | {{ forecast.change_pct }}% |
-| Direction | **{{ forecast.direction }}** |
-| Confidence | {{ forecast.confidence }} |
-| Final Score | {{ forecast.final_score }} |
+**Last Close**: ₩{{ forecast.last_close }} | **Change**: {{ forecast.change_pct }}%
 
-**Technical Signals**: {{ forecast.tech_summary }}
+#### Forecast by Timeframe
 
-**LLM Analysis**: {{ forecast.news_summary }}
+| Timeframe | Direction | Confidence | Score | Predicted Price Range |
+|-----------|-----------|------------|-------|-----------------------|
+| Daily (Next Day) | {{ dir_emoji(forecast.daily.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | {{ forecast.daily.score }} | ₩{{ forecast.daily.price_range.low }} ~ ₩{{ forecast.daily.price_range.high }} |
+| Weekly (1 Week) | {{ dir_emoji(forecast.weekly.direction) }} | {{ "%.1f" | format(forecast.weekly.confidence * 100) }}% | {{ forecast.weekly.score }} | ₩{{ forecast.weekly.price_range.low }} ~ ₩{{ forecast.weekly.price_range.high }} |
+| Monthly (1 Month) | {{ dir_emoji(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.monthly.confidence * 100) }}% | {{ forecast.monthly.score }} | ₩{{ forecast.monthly.price_range.low }} ~ ₩{{ forecast.monthly.price_range.high }} |
+
+**Technical Analysis**: {{ forecast.tech_summary }}
+
+**AI Analysis Summary**: {{ forecast.news_summary }}
 
 {% if forecast.key_catalysts %}
-**Catalysts**: {{ forecast.key_catalysts | join(', ') }}
+**Catalysts**: {{ forecast.key_catalysts | join(' / ') }}
 {% endif %}
 {% if forecast.key_risks %}
-**Risks**: {{ forecast.key_risks | join(', ') }}
+**Risks**: {{ forecast.key_risks | join(' / ') }}
 {% endif %}
 
 ---
 {% endfor %}
 
-## Model Performance (Last 30 Days)
+## US Market
 
-| Metric | Value |
-|--------|-------|
-| Directional Accuracy | {{ accuracy.directional }}% |
-| Total Predictions | {{ accuracy.total }} |
-| Correct | {{ accuracy.correct }} |
+{% for forecast in forecasts if forecast.market == 'us' %}
+### {{ forecast.symbol }} ({{ forecast.name }})
+
+**Last Close**: ${{ forecast.last_close }} | **Change**: {{ forecast.change_pct }}%
+
+#### Forecast by Timeframe
+
+| Timeframe | Direction | Confidence | Score | Predicted Price Range |
+|-----------|-----------|------------|-------|-----------------------|
+| Daily (Next Day) | {{ dir_emoji(forecast.daily.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | {{ forecast.daily.score }} | ${{ forecast.daily.price_range.low }} ~ ${{ forecast.daily.price_range.high }} |
+| Weekly (1 Week) | {{ dir_emoji(forecast.weekly.direction) }} | {{ "%.1f" | format(forecast.weekly.confidence * 100) }}% | {{ forecast.weekly.score }} | ${{ forecast.weekly.price_range.low }} ~ ${{ forecast.weekly.price_range.high }} |
+| Monthly (1 Month) | {{ dir_emoji(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.monthly.confidence * 100) }}% | {{ forecast.monthly.score }} | ${{ forecast.monthly.price_range.low }} ~ ${{ forecast.monthly.price_range.high }} |
+
+**Technical Analysis**: {{ forecast.tech_summary }}
+
+**AI Analysis Summary**: {{ forecast.news_summary }}
+
+{% if forecast.key_catalysts %}
+**Catalysts**: {{ forecast.key_catalysts | join(' / ') }}
+{% endif %}
+{% if forecast.key_risks %}
+**Risks**: {{ forecast.key_risks | join(' / ') }}
+{% endif %}
+
+---
+{% endfor %}
+
+## Summary Table
+
+### Korea
+| Stock | Daily | Weekly | Monthly | Daily Confidence | Price Range (Daily) |
+|-------|-------|--------|---------|------------------|---------------------|
+{% for forecast in forecasts if forecast.market == 'korea' %}
+| {{ forecast.name }} ({{ forecast.symbol }}) | {{ dir_emoji(forecast.daily.direction) }} | {{ dir_emoji(forecast.weekly.direction) }} | {{ dir_emoji(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | ₩{{ forecast.daily.price_range.low }} ~ ₩{{ forecast.daily.price_range.high }} |
+{% endfor %}
+
+### US
+| Stock | Daily | Weekly | Monthly | Daily Confidence | Price Range (Daily) |
+|-------|-------|--------|---------|------------------|---------------------|
+{% for forecast in forecasts if forecast.market == 'us' %}
+| {{ forecast.name }} ({{ forecast.symbol }}) | {{ dir_emoji(forecast.daily.direction) }} | {{ dir_emoji(forecast.weekly.direction) }} | {{ dir_emoji(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | ${{ forecast.daily.price_range.low }} ~ ${{ forecast.daily.price_range.high }} |
+{% endfor %}
+
+---
+---
+
+{# ============================================================ #}
+{# KOREAN REPORT / 한국어 보고서                                    #}
+{# ============================================================ #}
+
+# 일일 주식 전망 리포트
+
+**날짜**: {{ date }}
+**생성시각**: {{ generated_at }}
 
 ---
 
-*Generated by Stock Forecast Platform v{{ version }}*
+## 시장 요약
+
+### 주요 뉴스
+{% for article in top_news[:5] %}
+- **[{{ article.source }}]** {{ article.title }}
+{% endfor %}
+
+---
+
+## 한국 시장
+
+{% for forecast in forecasts if forecast.market == 'korea' %}
+### {{ forecast.symbol }} ({{ forecast.name }})
+
+**전일 종가**: ₩{{ forecast.last_close }} | **변동률**: {{ forecast.change_pct }}%
+
+#### 기간별 전망
+
+| 기간 | 방향 | 신뢰도 | 점수 | 예상 가격 범위 |
+|------|------|--------|------|---------------|
+| 일간 (익일) | {{ dir_emoji_kr(forecast.daily.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | {{ forecast.daily.score }} | ₩{{ forecast.daily.price_range.low }} ~ ₩{{ forecast.daily.price_range.high }} |
+| 주간 (1주) | {{ dir_emoji_kr(forecast.weekly.direction) }} | {{ "%.1f" | format(forecast.weekly.confidence * 100) }}% | {{ forecast.weekly.score }} | ₩{{ forecast.weekly.price_range.low }} ~ ₩{{ forecast.weekly.price_range.high }} |
+| 월간 (1개월) | {{ dir_emoji_kr(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.monthly.confidence * 100) }}% | {{ forecast.monthly.score }} | ₩{{ forecast.monthly.price_range.low }} ~ ₩{{ forecast.monthly.price_range.high }} |
+
+**기술적 분석**: {{ forecast.tech_summary }}
+
+**AI 분석 요약**: {{ forecast.news_summary }}
+
+{% if forecast.key_catalysts %}
+**상승 촉매**: {{ forecast.key_catalysts | join(' / ') }}
+{% endif %}
+{% if forecast.key_risks %}
+**하락 위험**: {{ forecast.key_risks | join(' / ') }}
+{% endif %}
+
+---
+{% endfor %}
+
+## 미국 시장
+
+{% for forecast in forecasts if forecast.market == 'us' %}
+### {{ forecast.symbol }} ({{ forecast.name }})
+
+**전일 종가**: ${{ forecast.last_close }} | **변동률**: {{ forecast.change_pct }}%
+
+#### 기간별 전망
+
+| 기간 | 방향 | 신뢰도 | 점수 | 예상 가격 범위 |
+|------|------|--------|------|---------------|
+| 일간 (익일) | {{ dir_emoji_kr(forecast.daily.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | {{ forecast.daily.score }} | ${{ forecast.daily.price_range.low }} ~ ${{ forecast.daily.price_range.high }} |
+| 주간 (1주) | {{ dir_emoji_kr(forecast.weekly.direction) }} | {{ "%.1f" | format(forecast.weekly.confidence * 100) }}% | {{ forecast.weekly.score }} | ${{ forecast.weekly.price_range.low }} ~ ${{ forecast.weekly.price_range.high }} |
+| 월간 (1개월) | {{ dir_emoji_kr(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.monthly.confidence * 100) }}% | {{ forecast.monthly.score }} | ${{ forecast.monthly.price_range.low }} ~ ${{ forecast.monthly.price_range.high }} |
+
+**기술적 분석**: {{ forecast.tech_summary }}
+
+**AI 분석 요약**: {{ forecast.news_summary }}
+
+{% if forecast.key_catalysts %}
+**상승 촉매**: {{ forecast.key_catalysts | join(' / ') }}
+{% endif %}
+{% if forecast.key_risks %}
+**하락 위험**: {{ forecast.key_risks | join(' / ') }}
+{% endif %}
+
+---
+{% endfor %}
+
+## 요약 테이블
+
+### 한국
+| 종목 | 일간 | 주간 | 월간 | 일간 신뢰도 | 예상 가격 범위 (일간) |
+|------|------|------|------|------------|---------------------|
+{% for forecast in forecasts if forecast.market == 'korea' %}
+| {{ forecast.name }} ({{ forecast.symbol }}) | {{ dir_emoji_kr(forecast.daily.direction) }} | {{ dir_emoji_kr(forecast.weekly.direction) }} | {{ dir_emoji_kr(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | ₩{{ forecast.daily.price_range.low }} ~ ₩{{ forecast.daily.price_range.high }} |
+{% endfor %}
+
+### 미국
+| 종목 | 일간 | 주간 | 월간 | 일간 신뢰도 | 예상 가격 범위 (일간) |
+|------|------|------|------|------------|---------------------|
+{% for forecast in forecasts if forecast.market == 'us' %}
+| {{ forecast.name }} ({{ forecast.symbol }}) | {{ dir_emoji_kr(forecast.daily.direction) }} | {{ dir_emoji_kr(forecast.weekly.direction) }} | {{ dir_emoji_kr(forecast.monthly.direction) }} | {{ "%.1f" | format(forecast.daily.confidence * 100) }}% | ${{ forecast.daily.price_range.low }} ~ ${{ forecast.daily.price_range.high }} |
+{% endfor %}
+
+---
+
+*Generated by Stock Forecast Platform v{{ version }} | Powered by Claude Sonnet 4.5 on AWS Bedrock*

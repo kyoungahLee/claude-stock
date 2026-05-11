@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window === "undefined" ? "http://127.0.0.1:8000" : "");
 
 export interface Forecast {
   ticker: string;
@@ -59,9 +61,7 @@ export interface HealthStatus {
 
 async function fetchAPI<T>(endpoint: string): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
-  const res = await fetch(url, {
-    next: { revalidate: 60 },
-  });
+  const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
@@ -75,7 +75,20 @@ export async function getHealth(): Promise<HealthStatus> {
 }
 
 export async function getForecasts(): Promise<Forecast[]> {
-  return fetchAPI<Forecast[]>("/api/forecasts");
+  const data = await fetchAPI<any>("/api/forecasts");
+  const forecasts = data.forecasts || data || [];
+  return forecasts.map((f: any) => ({
+    ticker: f.ticker || "",
+    name: f.name || f.ticker || "",
+    market: (f.ticker || "").includes(".KS") ? "KR" : "US",
+    direction: f.direction || "FLAT",
+    confidence: f.confidence || 0,
+    last_price: f.last_price || f.score || 0,
+    currency: (f.ticker || "").includes(".KS") ? "KRW" : "USD",
+    change_percent: f.change_percent || f.actual_change || 0,
+    analysis_summary: f.analysis_summary || "",
+    created_at: f.created_at || "",
+  }));
 }
 
 export async function getForecast(ticker: string): Promise<Forecast> {
@@ -89,5 +102,40 @@ export async function getForecastHistory(
 }
 
 export async function getBacktestScores(): Promise<BacktestScores> {
-  return fetchAPI<BacktestScores>("/api/backtests/scores");
+  try {
+    const data = await fetchAPI<any>("/api/backtests/scores");
+    return {
+      overall_accuracy: data.overall_accuracy || 0,
+      total_predictions: data.total_predictions || 0,
+      correct_predictions: data.correct_predictions || 0,
+      by_market: data.by_market || {
+        KR: { accuracy: 0, total: 0, correct: 0 },
+        US: { accuracy: 0, total: 0, correct: 0 },
+      },
+      by_direction: data.by_direction || {
+        UP: { accuracy: 0, total: 0 },
+        DOWN: { accuracy: 0, total: 0 },
+        FLAT: { accuracy: 0, total: 0 },
+      },
+      recent_7d_accuracy: data.recent_7d_accuracy || 0,
+      recent_30d_accuracy: data.recent_30d_accuracy || 0,
+    };
+  } catch {
+    return {
+      overall_accuracy: 0,
+      total_predictions: 0,
+      correct_predictions: 0,
+      by_market: {
+        KR: { accuracy: 0, total: 0, correct: 0 },
+        US: { accuracy: 0, total: 0, correct: 0 },
+      },
+      by_direction: {
+        UP: { accuracy: 0, total: 0 },
+        DOWN: { accuracy: 0, total: 0 },
+        FLAT: { accuracy: 0, total: 0 },
+      },
+      recent_7d_accuracy: 0,
+      recent_30d_accuracy: 0,
+    };
+  }
 }

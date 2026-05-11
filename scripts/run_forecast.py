@@ -66,6 +66,8 @@ def run():
                     "change_pct": round(change, 2),
                 })
 
+        current_price = float(df.iloc[-1]["Close"])
+
         # 3. LLM Analysis
         print(f"       -> Running LLM analysis...")
         llm_result = analyze_with_llm(
@@ -74,6 +76,7 @@ def run():
             technical_signals=signals,
             news_text=news_text[:3000],
             recent_prices=recent_prices,
+            current_price=current_price,
         )
 
         # 4. Combine signals
@@ -88,6 +91,11 @@ def run():
             if isinstance(data, dict) and "signal" in data:
                 tech_summary_parts.append(f"{indicator}={data['signal']}")
 
+        llm_analysis = combined["llm_analysis"]
+        daily_data = llm_analysis.get("daily", {})
+        weekly_data = llm_analysis.get("weekly", {})
+        monthly_data = llm_analysis.get("monthly", {})
+
         forecasts.append({
             "symbol": symbol,
             "name": name,
@@ -97,14 +105,43 @@ def run():
             "direction": combined["direction"],
             "confidence": combined["confidence"],
             "final_score": combined["final_score"],
+            "daily": {
+                "direction": daily_data.get("direction", "FLAT"),
+                "confidence": daily_data.get("confidence", 0.5),
+                "score": combined["final_score"],
+                "price_range": daily_data.get("price_range", {}),
+                "reasoning": daily_data.get("reasoning", ""),
+            },
+            "weekly": {
+                "direction": weekly_data.get("direction", "FLAT"),
+                "confidence": weekly_data.get("confidence", 0.5),
+                "score": round(weekly_data.get("confidence", 0.5), 4),
+                "price_range": weekly_data.get("price_range", {}),
+                "reasoning": weekly_data.get("reasoning", ""),
+            },
+            "monthly": {
+                "direction": monthly_data.get("direction", "FLAT"),
+                "confidence": monthly_data.get("confidence", 0.5),
+                "score": round(monthly_data.get("confidence", 0.5), 4),
+                "price_range": monthly_data.get("price_range", {}),
+                "reasoning": monthly_data.get("reasoning", ""),
+            },
             "tech_summary": ", ".join(tech_summary_parts) if tech_summary_parts else "N/A",
-            "news_summary": combined["llm_analysis"].get("news_summary", ""),
-            "key_catalysts": combined["llm_analysis"].get("key_catalysts", []),
-            "key_risks": combined["llm_analysis"].get("key_risks", []),
+            "news_summary": llm_analysis.get("news_summary", ""),
+            "key_catalysts": llm_analysis.get("key_catalysts", []),
+            "key_risks": llm_analysis.get("key_risks", []),
         })
 
-    # 5. Generate report
-    print(f"\n[3/4] Generating report...")
+    # 5. Generate reports
+    print(f"\n[3/4] Generating reports...")
+    from src.reports.stock_report import generate_stock_report
+
+    # Individual stock reports
+    for f in forecasts:
+        stock_report_path = generate_stock_report(f)
+        print(f"       -> Stock report: {stock_report_path}")
+
+    # Daily summary report
     top_news_for_report = [
         {"source": a.source, "title": a.title}
         for a in all_news[:10]
@@ -113,7 +150,7 @@ def run():
         forecasts=forecasts,
         top_news=top_news_for_report,
     )
-    print(f"       -> Report saved: {report_path}")
+    print(f"       -> Daily report saved: {report_path}")
 
     # Summary
     print(f"\n[4/4] Summary")
