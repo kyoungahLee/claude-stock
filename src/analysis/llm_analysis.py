@@ -1,7 +1,31 @@
 import json
-from anthropic import Anthropic
+
+import anthropic
 
 from src.config import get_settings
+
+
+def _get_client():
+    settings = get_settings()
+
+    if settings.llm_provider == "bedrock":
+        return anthropic.AnthropicBedrock(
+            aws_region=settings.aws_region,
+            aws_profile=settings.aws_profile if settings.aws_profile else None,
+            aws_access_key=settings.aws_access_key_id if settings.aws_access_key_id else None,
+            aws_secret_key=settings.aws_secret_access_key if settings.aws_secret_access_key else None,
+            aws_session_token=settings.aws_session_token if settings.aws_session_token else None,
+        )
+    else:
+        if not settings.anthropic_api_key:
+            return None
+        return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+
+def _get_model_id(settings) -> str:
+    if settings.llm_provider == "bedrock":
+        return settings.bedrock_model_id
+    return "claude-sonnet-4-20250514"
 
 
 def analyze_with_llm(
@@ -12,10 +36,9 @@ def analyze_with_llm(
     recent_prices: list[dict],
 ) -> dict:
     settings = get_settings()
-    if not settings.anthropic_api_key:
-        return {"error": "ANTHROPIC_API_KEY not configured"}
-
-    client = Anthropic(api_key=settings.anthropic_api_key)
+    client = _get_client()
+    if client is None:
+        return {"error": "LLM not configured. Set ANTHROPIC_API_KEY or LLM_PROVIDER=bedrock"}
 
     system_prompt = """You are a professional stock market analyst. You analyze technical indicators and news to provide stock forecasts.
 
@@ -57,14 +80,13 @@ Provide your analysis as JSON."""
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=_get_model_id(settings),
             max_tokens=1024,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
 
         content = response.content[0].text
-        # Extract JSON from response
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         elif "```" in content:
