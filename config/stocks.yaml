@@ -1,0 +1,40 @@
+markets:
+  korea:
+    exchange: ["KOSPI", "KOSDAQ"]
+    tickers:
+      - symbol: "005930.KS"
+        name: "삼성전자"
+      - symbol: "000660.KS"
+        name: "SK하이닉스"
+      - symbol: "373220.KS"
+        name: "LG에너지솔루션"
+      - symbol: "005380.KS"
+        name: "현대자동차"
+      - symbol: "035420.KS"
+        name: "NAVER"
+      - symbol: "035720.KS"
+        name: "카카오"
+      - symbol: "006400.KS"
+        name: "삼성SDI"
+      - symbol: "051910.KS"
+        name: "LG화학"
+
+  us:
+    exchange: ["NYSE", "NASDAQ"]
+    tickers:
+      - symbol: "AAPL"
+        name: "Apple"
+      - symbol: "NVDA"
+        name: "NVIDIA"
+      - symbol: "MSFT"
+        name: "Microsoft"
+      - symbol: "GOOGL"
+        name: "Alphabet"
+      - symbol: "AMZN"
+        name: "Amazon"
+      - symbol: "TSLA"
+        name: "Tesla"
+      - symbol: "META"
+        name: "Meta Platforms"
+      - symbol: "AMD"
+        name: "AMD"

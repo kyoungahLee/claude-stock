@@ -1,0 +1,40 @@
+app:
+  name: "Stock Forecast Platform"
+  version: "0.1.0"
+  timezone: "Asia/Seoul"
+
+database:
+  url: "sqlite:///data/stock_forecast.db"
+
+schedule:
+  korea:
+    pre_market: "08:00"  # KST
+    post_market: "16:00"  # KST
+  us:
+    pre_market: "22:00"  # KST (08:00 EST)
+    post_market: "06:00"  # KST next day (17:00 EST)
+
+analysis:
+  depth: "standard"  # light | standard | deep
+  ml_weight: 0.5
+  llm_weight: 0.5
+  lookback_days: 60
+  technical_indicators:
+    - RSI
+    - MACD
+    - BollingerBands
+    - SMA_20
+    - SMA_50
+    - EMA_12
+    - EMA_26
+    - Volume_SMA_20
+
+backtesting:
+  min_days_for_tuning: 30
+  max_weight_change_per_day: 0.05
+  retrain_schedule: "weekly"  # weekly | monthly
+  accuracy_threshold: 0.55  # trigger emergency retrain if below
+
+reports:
+  output_dir: "reports"
+  format: "markdown"
