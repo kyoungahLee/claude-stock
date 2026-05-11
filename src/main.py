@@ -10,7 +10,14 @@ from src.db.models import Base
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    from src.scheduler.jobs import create_scheduler
+    scheduler = create_scheduler()
+    scheduler.start()
+
     yield
+
+    scheduler.shutdown()
     await engine.dispose()
 
 
