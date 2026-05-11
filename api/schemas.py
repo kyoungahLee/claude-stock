@@ -10,6 +10,8 @@ class ForecastResponse(BaseModel):
     direction: str
     confidence: float
     score: float
+    last_price: float | None = None
+    change_pct: float | None = None
     actual_direction: str | None = None
     actual_change: float | None = None
     created_at: datetime

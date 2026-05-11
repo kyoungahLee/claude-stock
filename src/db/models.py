@@ -17,6 +17,8 @@ class Prediction(Base):
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
+    last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     actual_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
     actual_change: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

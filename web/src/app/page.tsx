@@ -52,9 +52,9 @@ async function fetchForecasts() {
       market: (f.ticker || "").includes(".KS") ? "KR" : "US",
       direction: f.direction || "FLAT",
       confidence: f.confidence || 0,
-      last_price: 0,
+      last_price: f.last_price || 0,
       currency: (f.ticker || "").includes(".KS") ? "KRW" : "USD",
-      change_percent: f.actual_change || 0,
+      change_percent: f.change_pct || f.actual_change || 0,
       analysis_summary: "",
       created_at: f.created_at || "",
     }));
