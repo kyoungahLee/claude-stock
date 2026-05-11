@@ -45,27 +45,33 @@ def analyze_with_llm(
 
 Your output must be valid JSON with this structure:
 {
-    "news_summary": "Brief summary of relevant news (2-3 sentences)",
+    "news_summary": "Brief summary of relevant news in English (2-3 sentences)",
+    "news_summary_kr": "동일한 뉴스 요약을 한국어로 작성 (2-3문장)",
     "daily": {
         "direction": "UP" | "DOWN" | "FLAT",
         "confidence": <float from 0.0 to 1.0>,
         "price_range": {"low": <float absolute price>, "high": <float absolute price>},
-        "reasoning": "Brief explanation for next-day forecast"
+        "reasoning": "Brief explanation for next-day forecast in English",
+        "reasoning_kr": "익일 전망에 대한 간략한 설명 (한국어)"
     },
     "weekly": {
         "direction": "UP" | "DOWN" | "FLAT",
         "confidence": <float from 0.0 to 1.0>,
         "price_range": {"low": <float absolute price>, "high": <float absolute price>},
-        "reasoning": "Brief explanation for 1-week forecast"
+        "reasoning": "Brief explanation for 1-week forecast in English",
+        "reasoning_kr": "1주일 전망에 대한 간략한 설명 (한국어)"
     },
     "monthly": {
         "direction": "UP" | "DOWN" | "FLAT",
         "confidence": <float from 0.0 to 1.0>,
         "price_range": {"low": <float absolute price>, "high": <float absolute price>},
-        "reasoning": "Brief explanation for 1-month forecast"
+        "reasoning": "Brief explanation for 1-month forecast in English",
+        "reasoning_kr": "1개월 전망에 대한 간략한 설명 (한국어)"
     },
-    "key_catalysts": ["catalyst1", "catalyst2"],
-    "key_risks": ["risk1", "risk2"]
+    "key_catalysts": ["catalyst1 in English", "catalyst2 in English"],
+    "key_catalysts_kr": ["상승 촉매1 한국어", "상승 촉매2 한국어"],
+    "key_risks": ["risk1 in English", "risk2 in English"],
+    "key_risks_kr": ["하락 위험1 한국어", "하락 위험2 한국어"]
 }
 
 Guidelines:
@@ -73,7 +79,8 @@ Guidelines:
 - Use the provided current price as the baseline for your price range estimates.
 - Wider timeframes should generally have wider price ranges to reflect greater uncertainty.
 - Be objective and data-driven. If information is insufficient, lower your confidence score.
-- Confidence for longer timeframes should generally be lower than shorter ones."""
+- Confidence for longer timeframes should generally be lower than shorter ones.
+- All _kr fields must be proper Korean translations of the corresponding English fields."""
 
     price_text = ""
     if recent_prices:
