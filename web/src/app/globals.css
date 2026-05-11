@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0f1419;
+    --foreground: #e2e8f0;
+    --card: #1a2332;
+    --card-hover: #1e2a3a;
+    --border: #2d3748;
+    --accent: #3b82f6;
+    --success: #10b981;
+    --danger: #ef4444;
+    --muted: #6b7280;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border border-terminal-border bg-terminal-card p-4 transition-all duration-200 hover:border-terminal-accent/30;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20;
+  }
+
+  .badge-red {
+    @apply bg-red-500/10 text-red-400 ring-1 ring-red-500/20;
+  }
+
+  .badge-gray {
+    @apply bg-gray-500/10 text-gray-400 ring-1 ring-gray-500/20;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-terminal-card hover:text-white;
+  }
+
+  .nav-link-active {
+    @apply bg-terminal-accent/10 text-terminal-accent;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
