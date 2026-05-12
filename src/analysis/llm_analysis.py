@@ -108,7 +108,7 @@ Provide your analysis as JSON."""
     try:
         response = client.messages.create(
             model=_get_model_id(settings),
-            max_tokens=2048,
+            max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
