@@ -31,10 +31,12 @@ app = FastAPI(
 from api.routes.backtests import router as backtests_router  # noqa: E402
 from api.routes.forecasts import router as forecasts_router  # noqa: E402
 from api.routes.health import router as health_router  # noqa: E402
+from api.routes.reports import router as reports_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(forecasts_router)
 app.include_router(backtests_router)
+app.include_router(reports_router)
 
 
 if __name__ == "__main__":
