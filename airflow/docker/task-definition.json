@@ -1,0 +1,31 @@
+{
+  "family": "stock-forecast-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::197840067661:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::197840067661:role/stock-forecast-task-role",
+  "containerDefinitions": [
+    {
+      "name": "stock-forecast",
+      "image": "197840067661.dkr.ecr.eu-west-1.amazonaws.com/stock-forecast:latest",
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/stock-forecast",
+          "awslogs-region": "eu-west-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "environment": [
+        {"name": "LLM_PROVIDER", "value": "bedrock"},
+        {"name": "AWS_REGION", "value": "us-east-1"},
+        {"name": "BEDROCK_MODEL_ID", "value": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"},
+        {"name": "S3_REPORT_BUCKET", "value": "stock-forecast-reports-197840067661"},
+        {"name": "DATABASE_URL", "value": "postgresql://stockuser:CHANGE_ME@stock-forecast-db.xxxxxxx.eu-west-1.rds.amazonaws.com:5432/stockforecast"}
+      ]
+    }
+  ]
+}
