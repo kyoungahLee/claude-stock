@@ -1,39 +1,138 @@
 """
-Stock Forecast Platform - Airflow DAG
+Stock Forecast Platform - Airflow DAG (MWAA 직접 실행)
+
+Docker/ECS 없이 MWAA 워커에서 직접 Python 실행.
+소스코드는 S3에서 다운로드하여 실행.
 
 스케줄:
 - 한국 시장: 08:00 KST 전망 / 16:00 KST 마감
 - 미국 시장: 22:00 KST 전망 / 06:30 KST 마감 (다음날)
-
-실행 방식: ECS Fargate Task
 """
 
+import os
+import sys
+import json
+import subprocess
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from airflow import DAG
-from airflow.providers.amazon.aws.operators.ecs import EcsRunTaskOperator
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 
+import boto3
+
 
 # ============================================================
-# 설정 - MWAA 환경 정보
+# 설정
 # ============================================================
-ECS_CLUSTER = "stock-forecast-cluster"  # ECS 클러스터명 (생성 필요)
-TASK_DEFINITION = "stock-forecast-task"  # ECS Task Definition명 (생성 필요)
-SUBNETS = ["subnet-09fd7a476c383a8cd", "subnet-0c591e884b7fd1411"]
-SECURITY_GROUPS = ["sg-09b8deb50bba429d2"]
 AWS_REGION = "eu-west-1"
-S3_REPORT_BUCKET = "mwaa-bucket-only"  # 또는 별도 리포트 버킷 생성 가능
+S3_SOURCE_BUCKET = "mwaa-bucket-only"
+S3_SOURCE_PREFIX = "stock-forecast-src/"
+S3_REPORT_BUCKET = "stock-forecast-reports-197840067661"
 
-# 공통 환경변수 (ECS Task에 전달)
-COMMON_ENV = [
-    {"name": "LLM_PROVIDER", "value": "bedrock"},
-    {"name": "AWS_REGION", "value": "us-east-1"},  # Bedrock은 us-east-1 사용
-    {"name": "BEDROCK_MODEL_ID", "value": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"},
-    {"name": "S3_REPORT_BUCKET", "value": S3_REPORT_BUCKET},
-    {"name": "DATABASE_URL", "value": "postgresql://user:pass@host:5432/stock_forecast"},  # RDS
-]
+BEDROCK_REGION = "us-east-1"
+BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
+# ============================================================
+# 헬퍼 함수
+# ============================================================
+def _download_source():
+    """S3에서 소스코드를 다운로드하여 임시 디렉토리에 저장"""
+    work_dir = Path(tempfile.mkdtemp(prefix="stock_forecast_"))
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_SOURCE_BUCKET, Prefix=S3_SOURCE_PREFIX):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            rel_path = key[len(S3_SOURCE_PREFIX):]
+            if not rel_path:
+                continue
+            local_path = work_dir / rel_path
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            s3.download_file(S3_SOURCE_BUCKET, key, str(local_path))
+
+    return str(work_dir)
+
+
+def _upload_reports(work_dir: str):
+    """생성된 리포트를 S3에 업로드"""
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+    reports_dir = Path(work_dir) / "reports"
+
+    if not reports_dir.exists():
+        return
+
+    for report_file in reports_dir.rglob("*.md"):
+        rel_path = report_file.relative_to(reports_dir)
+        s3_key = f"reports/{rel_path}"
+        s3.upload_file(str(report_file), S3_REPORT_BUCKET, s3_key)
+        print(f"Uploaded: s3://{S3_REPORT_BUCKET}/{s3_key}")
+
+
+def _run_script(script_name: str, market: str = "all"):
+    """소스코드를 다운로드하고 스크립트 실행 후 리포트 업로드"""
+    work_dir = _download_source()
+
+    env = os.environ.copy()
+    env.update({
+        "PYTHONPATH": work_dir,
+        "MARKET_FILTER": market,
+        "LLM_PROVIDER": "bedrock",
+        "AWS_REGION": BEDROCK_REGION,
+        "BEDROCK_MODEL_ID": BEDROCK_MODEL_ID,
+        "S3_REPORT_BUCKET": S3_REPORT_BUCKET,
+    })
+
+    script_path = Path(work_dir) / "scripts" / script_name
+    print(f"Running: {script_path} (market={market})")
+
+    result = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=work_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+    print(result.stdout)
+    if result.returncode != 0:
+        print(f"STDERR: {result.stderr}")
+        raise RuntimeError(f"{script_name} failed with exit code {result.returncode}")
+
+    _upload_reports(work_dir)
+    return result.returncode
+
+
+# ============================================================
+# Task 함수
+# ============================================================
+def run_forecast_kr(**kwargs):
+    _run_script("run_forecast.py", market="korea")
+
+
+def run_forecast_us(**kwargs):
+    _run_script("run_forecast.py", market="us")
+
+
+def run_closing_kr(**kwargs):
+    _run_script("run_closing_report.py", market="korea")
+
+
+def run_closing_us(**kwargs):
+    _run_script("run_closing_report.py", market="us")
+
+
+def run_backtest_kr(**kwargs):
+    _run_script("run_backtest.py", market="korea")
+
+
+def run_backtest_us(**kwargs):
+    _run_script("run_backtest.py", market="us")
 
 
 # ============================================================
@@ -42,211 +141,97 @@ COMMON_ENV = [
 default_args = {
     "owner": "stock-forecast",
     "depends_on_past": False,
-    "email_on_failure": True,
-    "email_on_retry": False,
+    "email_on_failure": False,
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
 }
 
 
-def _ecs_task(command: list[str], env_overrides: list[dict] = None):
-    """ECS Fargate Task 실행을 위한 overrides 생성"""
-    env = COMMON_ENV.copy()
-    if env_overrides:
-        env.extend(env_overrides)
-
-    return {
-        "containerOverrides": [
-            {
-                "name": "stock-forecast",
-                "command": command,
-                "environment": env,
-            }
-        ],
-    }
-
-
 # ============================================================
-# DAG 1: 한국 시장 전망 (매일 08:00 KST, 월~금)
+# DAG 1: 한국 시장 전망 (매일 08:00 KST = UTC 23:00, 월~금)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_kr_morning",
     default_args=default_args,
     description="한국 시장 장 시작 전 전망 리포트 생성",
-    schedule_interval="0 23 * * 0-4",  # UTC 23:00 = KST 08:00 (월~금)
+    schedule_interval="0 23 * * 0-4",
     start_date=days_ago(1),
     catchup=False,
     tags=["stock-forecast", "korea", "morning"],
 ) as dag_kr_morning:
 
-    forecast_kr = EcsRunTaskOperator(
+    PythonOperator(
         task_id="run_forecast_kr",
-        cluster=ECS_CLUSTER,
-        task_definition=TASK_DEFINITION,
-        launch_type="FARGATE",
-        overrides=_ecs_task(
-            command=["python", "scripts/run_forecast.py"],
-            env_overrides=[{"name": "MARKET_FILTER", "value": "korea"}],
-        ),
-        network_configuration={
-            "awsvpcConfiguration": {
-                "subnets": SUBNETS,
-                "securityGroups": SECURITY_GROUPS,
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        region=AWS_REGION,
-        awslogs_group="/ecs/stock-forecast",
-        awslogs_stream_prefix="forecast-kr",
+        python_callable=run_forecast_kr,
     )
 
 
 # ============================================================
-# DAG 2: 한국 시장 마감 (매일 16:00 KST, 월~금)
+# DAG 2: 한국 시장 마감 (매일 16:00 KST = UTC 07:00, 월~금)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_kr_closing",
     default_args=default_args,
-    description="한국 시장 장 마감 후 마감 리포트 + 백테스팅",
-    schedule_interval="0 7 * * 1-5",  # UTC 07:00 = KST 16:00 (월~금)
+    description="한국 시장 마감 리포트 + 백테스팅",
+    schedule_interval="0 7 * * 1-5",
     start_date=days_ago(1),
     catchup=False,
     tags=["stock-forecast", "korea", "closing"],
 ) as dag_kr_closing:
 
-    closing_kr = EcsRunTaskOperator(
+    closing = PythonOperator(
         task_id="run_closing_kr",
-        cluster=ECS_CLUSTER,
-        task_definition=TASK_DEFINITION,
-        launch_type="FARGATE",
-        overrides=_ecs_task(
-            command=["python", "scripts/run_closing_report.py"],
-            env_overrides=[{"name": "MARKET_FILTER", "value": "korea"}],
-        ),
-        network_configuration={
-            "awsvpcConfiguration": {
-                "subnets": SUBNETS,
-                "securityGroups": SECURITY_GROUPS,
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        region=AWS_REGION,
-        awslogs_group="/ecs/stock-forecast",
-        awslogs_stream_prefix="closing-kr",
+        python_callable=run_closing_kr,
     )
 
-    backtest_kr = EcsRunTaskOperator(
+    backtest = PythonOperator(
         task_id="run_backtest_kr",
-        cluster=ECS_CLUSTER,
-        task_definition=TASK_DEFINITION,
-        launch_type="FARGATE",
-        overrides=_ecs_task(
-            command=["python", "scripts/run_backtest.py"],
-            env_overrides=[{"name": "MARKET_FILTER", "value": "korea"}],
-        ),
-        network_configuration={
-            "awsvpcConfiguration": {
-                "subnets": SUBNETS,
-                "securityGroups": SECURITY_GROUPS,
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        region=AWS_REGION,
-        awslogs_group="/ecs/stock-forecast",
-        awslogs_stream_prefix="backtest-kr",
+        python_callable=run_backtest_kr,
     )
 
-    closing_kr >> backtest_kr
+    closing >> backtest
 
 
 # ============================================================
-# DAG 3: 미국 시장 전망 (매일 22:00 KST, 월~금)
+# DAG 3: 미국 시장 전망 (매일 22:00 KST = UTC 13:00, 월~금)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_us_morning",
     default_args=default_args,
     description="미국 시장 장 시작 전 전망 리포트 생성",
-    schedule_interval="0 13 * * 1-5",  # UTC 13:00 = KST 22:00 (월~금)
+    schedule_interval="0 13 * * 1-5",
     start_date=days_ago(1),
     catchup=False,
     tags=["stock-forecast", "us", "morning"],
 ) as dag_us_morning:
 
-    forecast_us = EcsRunTaskOperator(
+    PythonOperator(
         task_id="run_forecast_us",
-        cluster=ECS_CLUSTER,
-        task_definition=TASK_DEFINITION,
-        launch_type="FARGATE",
-        overrides=_ecs_task(
-            command=["python", "scripts/run_forecast.py"],
-            env_overrides=[{"name": "MARKET_FILTER", "value": "us"}],
-        ),
-        network_configuration={
-            "awsvpcConfiguration": {
-                "subnets": SUBNETS,
-                "securityGroups": SECURITY_GROUPS,
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        region=AWS_REGION,
-        awslogs_group="/ecs/stock-forecast",
-        awslogs_stream_prefix="forecast-us",
+        python_callable=run_forecast_us,
     )
 
 
 # ============================================================
-# DAG 4: 미국 시장 마감 (매일 06:30 KST, 화~토)
+# DAG 4: 미국 시장 마감 (매일 06:30 KST = UTC 21:30, 화~토)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_us_closing",
     default_args=default_args,
-    description="미국 시장 장 마감 후 마감 리포트 + 백테스팅",
-    schedule_interval="30 21 * * 1-5",  # UTC 21:30 = KST 06:30 (화~토)
+    description="미국 시장 마감 리포트 + 백테스팅",
+    schedule_interval="30 21 * * 1-5",
     start_date=days_ago(1),
     catchup=False,
     tags=["stock-forecast", "us", "closing"],
 ) as dag_us_closing:
 
-    closing_us = EcsRunTaskOperator(
+    closing = PythonOperator(
         task_id="run_closing_us",
-        cluster=ECS_CLUSTER,
-        task_definition=TASK_DEFINITION,
-        launch_type="FARGATE",
-        overrides=_ecs_task(
-            command=["python", "scripts/run_closing_report.py"],
-            env_overrides=[{"name": "MARKET_FILTER", "value": "us"}],
-        ),
-        network_configuration={
-            "awsvpcConfiguration": {
-                "subnets": SUBNETS,
-                "securityGroups": SECURITY_GROUPS,
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        region=AWS_REGION,
-        awslogs_group="/ecs/stock-forecast",
-        awslogs_stream_prefix="closing-us",
+        python_callable=run_closing_us,
     )
 
-    backtest_us = EcsRunTaskOperator(
+    backtest = PythonOperator(
         task_id="run_backtest_us",
-        cluster=ECS_CLUSTER,
-        task_definition=TASK_DEFINITION,
-        launch_type="FARGATE",
-        overrides=_ecs_task(
-            command=["python", "scripts/run_backtest.py"],
-            env_overrides=[{"name": "MARKET_FILTER", "value": "us"}],
-        ),
-        network_configuration={
-            "awsvpcConfiguration": {
-                "subnets": SUBNETS,
-                "securityGroups": SECURITY_GROUPS,
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        region=AWS_REGION,
-        awslogs_group="/ecs/stock-forecast",
-        awslogs_stream_prefix="backtest-us",
+        python_callable=run_backtest_us,
     )
 
-    closing_us >> backtest_us
+    closing >> backtest
