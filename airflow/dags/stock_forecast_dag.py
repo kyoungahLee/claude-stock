@@ -19,7 +19,6 @@ from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
 
 import boto3
 
@@ -154,8 +153,8 @@ with DAG(
     dag_id="stock_forecast_kr_morning",
     default_args=default_args,
     description="한국 시장 장 시작 전 전망 리포트 생성",
-    schedule_interval="0 23 * * 0-4",
-    start_date=days_ago(1),
+    schedule="0 23 * * 0-4",
+    start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "korea", "morning"],
 ) as dag_kr_morning:
@@ -173,8 +172,8 @@ with DAG(
     dag_id="stock_forecast_kr_closing",
     default_args=default_args,
     description="한국 시장 마감 리포트 + 백테스팅",
-    schedule_interval="0 7 * * 1-5",
-    start_date=days_ago(1),
+    schedule="0 7 * * 1-5",
+    start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "korea", "closing"],
 ) as dag_kr_closing:
@@ -199,8 +198,8 @@ with DAG(
     dag_id="stock_forecast_us_morning",
     default_args=default_args,
     description="미국 시장 장 시작 전 전망 리포트 생성",
-    schedule_interval="0 13 * * 1-5",
-    start_date=days_ago(1),
+    schedule="0 13 * * 1-5",
+    start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "us", "morning"],
 ) as dag_us_morning:
@@ -218,8 +217,8 @@ with DAG(
     dag_id="stock_forecast_us_closing",
     default_args=default_args,
     description="미국 시장 마감 리포트 + 백테스팅",
-    schedule_interval="30 21 * * 1-5",
-    start_date=days_ago(1),
+    schedule="30 21 * * 1-5",
+    start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "us", "closing"],
 ) as dag_us_closing:
