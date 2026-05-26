@@ -1,236 +1,186 @@
 """
-Stock Forecast Platform - Airflow DAG (MWAA 직접 실행)
+Stock Forecast Platform - Airflow DAG (MWAA)
 
-Docker/ECS 없이 MWAA 워커에서 직접 Python 실행.
-소스코드는 S3에서 다운로드하여 실행.
+BashOperator + venv 격리 방식.
+- 독립 가상환경에서 패키지 설치 후 실행 (MWAA 패키지 충돌 없음)
+- execution_timeout 30분 설정 (33종목 LLM 분석 소요 시간 대응)
+- 리포트를 S3에 업로드
 
-스케줄:
-- 한국 시장: 08:00 KST 전망 / 16:00 KST 마감
-- 미국 시장: 22:00 KST 전망 / 06:30 KST 마감 (다음날)
+스케줄 (KST 기준):
+- 한국 시장: 08:00 전망 / 16:00 마감
+- 미국 시장: 22:00 전망 / 06:30 마감 (다음날)
 """
 
-import os
-import sys
-import json
-import subprocess
-import tempfile
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-
-import boto3
+from airflow.providers.standard.operators.bash import BashOperator
 
 
 # ============================================================
 # 설정
 # ============================================================
-AWS_REGION = "eu-west-1"
-S3_SOURCE_BUCKET = "mwaa-bucket-only"
-S3_SOURCE_PREFIX = "stock-forecast-src/"
-S3_REPORT_BUCKET = "stock-forecast-reports-197840067661"
-
-BEDROCK_REGION = "us-east-1"
-BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+S3_SOURCE = "s3://mwaa-bucket-only/stock-forecast-src/"
+S3_REPORTS = "s3://stock-forecast-reports-197840067661/reports/"
+BEDROCK_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 
-# ============================================================
-# 헬퍼 함수
-# ============================================================
-def _download_source():
-    """S3에서 소스코드를 다운로드하여 임시 디렉토리에 저장"""
-    work_dir = Path(tempfile.mkdtemp(prefix="stock_forecast_"))
-    s3 = boto3.client("s3", region_name=AWS_REGION)
+def _bash_command(script: str, market: str) -> str:
+    return f"""
+set -e
 
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=S3_SOURCE_BUCKET, Prefix=S3_SOURCE_PREFIX):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            rel_path = key[len(S3_SOURCE_PREFIX):]
-            if not rel_path:
-                continue
-            local_path = work_dir / rel_path
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            s3.download_file(S3_SOURCE_BUCKET, key, str(local_path))
+echo "=== Starting stock forecast task ==="
+echo "Script: {script}"
+echo "Market: {market}"
+echo "Time: $(date)"
 
-    return str(work_dir)
+# 1. 작업 디렉토리
+WORK_DIR=$(mktemp -d /tmp/stock_forecast_XXXXXX)
+cd $WORK_DIR
+echo "Work dir: $WORK_DIR"
 
+# 2. S3에서 소스코드 다운로드
+echo "=== Downloading source from S3 ==="
+aws s3 sync {S3_SOURCE} . --quiet --exclude "*.pyc" --exclude "__pycache__/*" --exclude "reports/*"
+echo "Source downloaded."
 
-def _upload_reports(work_dir: str):
-    """생성된 리포트를 S3에 업로드"""
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-    reports_dir = Path(work_dir) / "reports"
+# 3. 가상환경 생성 + 패키지 설치
+echo "=== Creating venv and installing packages ==="
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --quiet --no-cache-dir yfinance pandas numpy feedparser beautifulsoup4 httpx ta anthropic sqlalchemy jinja2 pyyaml
+echo "Packages installed."
 
-    if not reports_dir.exists():
-        return
+# 4. 디렉토리 생성
+mkdir -p data reports/stocks
 
-    for report_file in reports_dir.rglob("*.md"):
-        rel_path = report_file.relative_to(reports_dir)
-        s3_key = f"reports/{rel_path}"
-        s3.upload_file(str(report_file), S3_REPORT_BUCKET, s3_key)
-        print(f"Uploaded: s3://{S3_REPORT_BUCKET}/{s3_key}")
+# 5. 환경변수 설정
+export PYTHONPATH=$WORK_DIR
+export MARKET_FILTER={market}
+export LLM_PROVIDER=bedrock
+export AWS_REGION=us-east-1
+export BEDROCK_MODEL_ID={BEDROCK_MODEL}
+export S3_REPORT_BUCKET=stock-forecast-reports-197840067661
 
+# 6. 스크립트 실행
+echo "=== Running {script} (market={market}) ==="
+python scripts/{script}
+echo "=== Script completed ==="
 
-def _run_script(script_name: str, market: str = "all"):
-    """소스코드를 다운로드하고 스크립트 실행 후 리포트 업로드"""
-    work_dir = _download_source()
+# 7. 리포트 S3 업로드
+if [ -d "reports" ] && [ "$(ls -A reports)" ]; then
+    echo "=== Uploading reports to S3 ==="
+    aws s3 sync reports/ {S3_REPORTS} --quiet
+    echo "Reports uploaded."
+else
+    echo "No reports to upload."
+fi
 
-    env = os.environ.copy()
-    env.update({
-        "PYTHONPATH": work_dir,
-        "MARKET_FILTER": market,
-        "LLM_PROVIDER": "bedrock",
-        "AWS_REGION": BEDROCK_REGION,
-        "BEDROCK_MODEL_ID": BEDROCK_MODEL_ID,
-        "S3_REPORT_BUCKET": S3_REPORT_BUCKET,
-    })
-
-    script_path = Path(work_dir) / "scripts" / script_name
-    print(f"Running: {script_path} (market={market})")
-
-    result = subprocess.run(
-        [sys.executable, str(script_path)],
-        cwd=work_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=900,
-    )
-
-    print(result.stdout)
-    if result.returncode != 0:
-        print(f"STDERR: {result.stderr}")
-        raise RuntimeError(f"{script_name} failed with exit code {result.returncode}")
-
-    _upload_reports(work_dir)
-    return result.returncode
+# 8. 정리
+deactivate
+rm -rf $WORK_DIR
+echo "=== Task complete ==="
+"""
 
 
 # ============================================================
-# Task 함수
-# ============================================================
-def run_forecast_kr(**kwargs):
-    _run_script("run_forecast.py", market="korea")
-
-
-def run_forecast_us(**kwargs):
-    _run_script("run_forecast.py", market="us")
-
-
-def run_closing_kr(**kwargs):
-    _run_script("run_closing_report.py", market="korea")
-
-
-def run_closing_us(**kwargs):
-    _run_script("run_closing_report.py", market="us")
-
-
-def run_backtest_kr(**kwargs):
-    _run_script("run_backtest.py", market="korea")
-
-
-def run_backtest_us(**kwargs):
-    _run_script("run_backtest.py", market="us")
-
-
-# ============================================================
-# 기본 DAG 설정
+# 기본 설정
 # ============================================================
 default_args = {
     "owner": "stock-forecast",
     "depends_on_past": False,
     "email_on_failure": False,
-    "retries": 2,
-    "retry_delay": timedelta(minutes=5),
+    "retries": 1,
+    "retry_delay": timedelta(minutes=3),
+    "execution_timeout": timedelta(minutes=30),
 }
 
 
 # ============================================================
-# DAG 1: 한국 시장 전망 (매일 08:00 KST = UTC 23:00, 월~금)
+# DAG 1: 한국 시장 전망 (08:00 KST = UTC 23:00, 일~목)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_kr_morning",
     default_args=default_args,
-    description="한국 시장 장 시작 전 전망 리포트 생성",
+    description="한국 시장 장 시작 전 전망 리포트 생성 (8종목)",
     schedule="0 23 * * 0-4",
     start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "korea", "morning"],
 ) as dag_kr_morning:
 
-    PythonOperator(
+    BashOperator(
         task_id="run_forecast_kr",
-        python_callable=run_forecast_kr,
+        bash_command=_bash_command("run_forecast.py", "korea"),
     )
 
 
 # ============================================================
-# DAG 2: 한국 시장 마감 (매일 16:00 KST = UTC 07:00, 월~금)
+# DAG 2: 한국 시장 마감 (16:00 KST = UTC 07:00, 월~금)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_kr_closing",
     default_args=default_args,
-    description="한국 시장 마감 리포트 + 백테스팅",
+    description="한국 시장 마감 리포트 + 백테스팅 (8종목)",
     schedule="0 7 * * 1-5",
     start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "korea", "closing"],
 ) as dag_kr_closing:
 
-    closing = PythonOperator(
+    closing_kr = BashOperator(
         task_id="run_closing_kr",
-        python_callable=run_closing_kr,
+        bash_command=_bash_command("run_closing_report.py", "korea"),
     )
 
-    backtest = PythonOperator(
+    backtest_kr = BashOperator(
         task_id="run_backtest_kr",
-        python_callable=run_backtest_kr,
+        bash_command=_bash_command("run_backtest.py", "korea"),
     )
 
-    closing >> backtest
+    closing_kr >> backtest_kr
 
 
 # ============================================================
-# DAG 3: 미국 시장 전망 (매일 22:00 KST = UTC 13:00, 월~금)
+# DAG 3: 미국 시장 전망 (22:00 KST = UTC 13:00, 월~금)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_us_morning",
     default_args=default_args,
-    description="미국 시장 장 시작 전 전망 리포트 생성",
+    description="미국 시장 장 시작 전 전망 리포트 생성 (25종목)",
     schedule="0 13 * * 1-5",
     start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "us", "morning"],
 ) as dag_us_morning:
 
-    PythonOperator(
+    BashOperator(
         task_id="run_forecast_us",
-        python_callable=run_forecast_us,
+        bash_command=_bash_command("run_forecast.py", "us"),
     )
 
 
 # ============================================================
-# DAG 4: 미국 시장 마감 (매일 06:30 KST = UTC 21:30, 화~토)
+# DAG 4: 미국 시장 마감 (06:30 KST = UTC 21:30, 월~금)
 # ============================================================
 with DAG(
     dag_id="stock_forecast_us_closing",
     default_args=default_args,
-    description="미국 시장 마감 리포트 + 백테스팅",
+    description="미국 시장 마감 리포트 + 백테스팅 (25종목)",
     schedule="30 21 * * 1-5",
     start_date=datetime(2026, 5, 18),
     catchup=False,
     tags=["stock-forecast", "us", "closing"],
 ) as dag_us_closing:
 
-    closing = PythonOperator(
+    closing_us = BashOperator(
         task_id="run_closing_us",
-        python_callable=run_closing_us,
+        bash_command=_bash_command("run_closing_report.py", "us"),
     )
 
-    backtest = PythonOperator(
+    backtest_us = BashOperator(
         task_id="run_backtest_us",
-        python_callable=run_backtest_us,
+        bash_command=_bash_command("run_backtest.py", "us"),
     )
 
-    closing >> backtest
+    closing_us >> backtest_us
